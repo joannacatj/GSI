@@ -1,5 +1,13 @@
 # Imports
-from GSI_cpp.isomorphism import create_graph, find_isomorphisms, print_mapping, initializeGPU
+from GSI_cpp.isomorphism import (
+    create_graph,
+    find_isomorphisms,
+    print_mapping,
+    initializeGPU,
+    get_last_fms,
+    get_last_found_first,
+    get_last_find_first_mode,
+)
 import networkx as nx
 
 # Initialize GPU
@@ -48,6 +56,15 @@ def findIsomorphism(query, data, find_first=False):
         return False, mappings
     else:
         return True, mappings
+
+def getLastFMS():
+    return get_last_fms()
+
+def getLastFoundFirst():
+    return get_last_found_first()
+
+def getLastFindFirstMode():
+    return get_last_find_first_mode()
 
 # Print Mappings
 def printMappings(mappings):

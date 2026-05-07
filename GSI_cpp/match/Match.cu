@@ -11,6 +11,10 @@
 
 using namespace std;
 
+unsigned long long Match::last_fms = 0;
+bool Match::last_found_first = false;
+bool Match::last_find_first_mode = false;
+
 //on Titan XP the pointer consumes 8 bytes
 //it uses little-endian byte order
 
@@ -61,6 +65,7 @@ __constant__ unsigned c_result_col_num;
 __constant__ unsigned c_query_vertex_num;
 __constant__ int c_find_first_mode;
 __device__ int d_find_first_found;
+__device__ unsigned long long d_find_first_fms;
 __device__ unsigned d_first_mapping[MAX_QUERY_SIZE];
 /*__constant__ unsigned c_link_num;*/
 /*__constant__ unsigned c_link_pos[MAX_DEGREE];*/
@@ -843,6 +848,24 @@ subtract(unsigned*& cand, unsigned& cand_num, unsigned* record, unsigned result_
 	cand_num = cnt;
 }
 
+__device__ bool
+visit_candidate_assignment()
+{
+    if(c_find_first_mode)
+    {
+        if(d_find_first_found)
+        {
+            return false;
+        }
+        atomicAdd(&d_find_first_fms, 1ULL);
+        if(d_find_first_found)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 __device__ void
 save_first_mapping(unsigned* record, unsigned result_col_num, unsigned last_value)
 {
@@ -1021,8 +1044,9 @@ second_kernel(unsigned* d_result_tmp, unsigned* d_result_tmp_num)
 
         __syncthreads(); // Ensure s_pool1 is fully populated before proceeding
 
+        bool visit_candidate = visit_candidate_assignment();
         unsigned k;
-        for (k = 0; k < c_result_col_num; ++k)
+        for (k = 0; visit_candidate && k < c_result_col_num; ++k)
         {
             if (s_pool2[bgroup + k] == s_pool1[bgroup + idx])
             {
@@ -1087,8 +1111,9 @@ second_kernel(unsigned* d_result_tmp, unsigned* d_result_tmp_num)
     if (idx < size)
     {
         s_pool1[bgroup + idx] = list[pos + idx];
+        bool visit_candidate = visit_candidate_assignment();
         unsigned k;
-        for (k = 0; k < c_result_col_num; ++k)
+        for (k = 0; visit_candidate && k < c_result_col_num; ++k)
         {
             if (s_pool2[bgroup + k] == s_pool1[bgroup + idx])
             {
@@ -1445,12 +1470,11 @@ link_kernel(unsigned* d_result_tmp, unsigned* d_result_tmp_pos, unsigned* d_resu
             unsigned pos = (c_result_col_num+1)*(swpos[3]+threadIdx.x);
             unsigned next_value = d_result_tmp[swpos[1]+swpos[3]+threadIdx.x];
             save_first_mapping(ptr, c_result_col_num, next_value);
-            if(c_find_first_mode && d_find_first_found)
+            if(!c_find_first_mode || !d_find_first_found)
             {
-                return;
+                memcpy(d_result_new+swpos[2]+pos, ptr, sizeof(unsigned)*c_result_col_num);
+                d_result_new[swpos[2]+pos+c_result_col_num] = next_value;
             }
-            memcpy(d_result_new+swpos[2]+pos, ptr, sizeof(unsigned)*c_result_col_num);
-            d_result_new[swpos[2]+pos+c_result_col_num] = next_value;
             if(threadIdx.x == 0)
             {
                 swpos[3] += 1024;
@@ -1477,12 +1501,11 @@ link_kernel(unsigned* d_result_tmp, unsigned* d_result_tmp_pos, unsigned* d_resu
             unsigned pos = (c_result_col_num+1)*(curr+idx);
             unsigned next_value = d_result_tmp[tmp_begin+curr+idx];
             save_first_mapping(record, c_result_col_num, next_value);
-            if(c_find_first_mode && d_find_first_found)
+            if(!c_find_first_mode || !d_find_first_found)
             {
-                return;
+                memcpy(d_result_new+start+pos, record, sizeof(unsigned)*c_result_col_num);
+                d_result_new[start+pos+c_result_col_num] = next_value;
             }
-            memcpy(d_result_new+start+pos, record, sizeof(unsigned)*c_result_col_num);
-            d_result_new[start+pos+c_result_col_num] = next_value;
         }
         curr += 32;
     }
@@ -1742,9 +1765,14 @@ Match::match(unsigned*& final_result, unsigned& result_row_num, unsigned& result
 /*cudaMemcpy(dp,&value,sizeof(float),cudaMemcpyHostToDevice);*/
 
 	int zero = 0;
+    unsigned long long zero_fms = 0;
     int find_first_mode = find_first ? 1 : 0;
+    Match::last_find_first_mode = find_first;
+    Match::last_found_first = false;
+    Match::last_fms = 0;
 	cudaMemcpyToSymbol(c_find_first_mode, &find_first_mode, sizeof(int));
 	cudaMemcpyToSymbol(d_find_first_found, &zero, sizeof(int));
+	cudaMemcpyToSymbol(d_find_first_fms, &zero_fms, sizeof(unsigned long long));
 
 	//long t0 = Util::get_cur_time();
 	copyGraphToGPU();
@@ -1843,6 +1871,11 @@ Match::match(unsigned*& final_result, unsigned& result_row_num, unsigned& result
 	//intermediate table of join results
 	result_row_num = qnum[idx];
 	result_col_num = 1;
+    if(find_first)
+    {
+        unsigned long long initial_fms = (qsize == 1 && result_row_num > 0) ? 1ULL : static_cast<unsigned long long>(result_row_num);
+        cudaMemcpyToSymbol(d_find_first_fms, &initial_fms, sizeof(unsigned long long));
+    }
 	unsigned* d_result = this->candidates[idx];  
 	//cout<<"intermediate table built"<<endl;
 
@@ -2053,7 +2086,14 @@ Match::match(unsigned*& final_result, unsigned& result_row_num, unsigned& result
 
     if(find_first)
     {
-        cout << "find-first: " << ((first_found || (success && result_row_num > 0)) ? "found" : "not found") << endl;
+        unsigned long long fms = 0;
+        int found_first = (first_found || (success && result_row_num > 0)) ? 1 : 0;
+        cudaMemcpyFromSymbol(&fms, d_find_first_fms, sizeof(unsigned long long));
+        Match::last_found_first = (found_first != 0);
+        Match::last_fms = fms;
+        cout << "find_first: 1" << endl;
+        cout << "found_first: " << found_first << endl;
+        cout << "fms: " << fms << endl;
     }
 #ifdef DEBUG
 	checkCudaErrors(cudaGetLastError());
@@ -2078,6 +2118,24 @@ Match::match(unsigned*& final_result, unsigned& result_row_num, unsigned& result
     /*cudaMemcpyFromSymbol(&minTaskLen, d_minTaskLen,  sizeof(unsigned));*/
     /*cudaDeviceSynchronize();*/
     /*cout<<"Maximum and Minimum task size: "<<maxTaskLen<<" "<<minTaskLen<<endl;*/
+}
+
+unsigned long long
+Match::getLastFMS()
+{
+    return Match::last_fms;
+}
+
+bool
+Match::getLastFoundFirst()
+{
+    return Match::last_found_first;
+}
+
+bool
+Match::getLastFindFirstMode()
+{
+    return Match::last_find_first_mode;
 }
 
 void

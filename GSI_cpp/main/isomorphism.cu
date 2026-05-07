@@ -140,3 +140,15 @@ void printMapping(const unordered_map<int, int>& mapping) {
 void initializeGPU(int dev, bool verbose){
     Match::initGPU(dev,verbose);
 }
+
+unsigned long long getLastFMS(){
+    return Match::getLastFMS();
+}
+
+bool getLastFoundFirst(){
+    return Match::getLastFoundFirst();
+}
+
+bool getLastFindFirstMode(){
+    return Match::getLastFindFirstMode();
+}

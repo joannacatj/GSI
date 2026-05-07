@@ -72,10 +72,17 @@ public:
 	~Match();
 
 	static void initGPU(int dev, bool verbose=true);
+    static unsigned long long getLastFMS();
+    static bool getLastFoundFirst();
+    static bool getLastFindFirstMode();
 
 private:
 	Graph* query;
 	Graph* data;
+
+    static unsigned long long last_fms;
+    static bool last_found_first;
+    static bool last_find_first_mode;
 
     unsigned** candidates;
 

@@ -14,6 +14,9 @@ std::vector<std::unordered_map<int, int>> findIsomorphisms(Graph* query, Graph* 
 void printMapping(const std::unordered_map<int, int>& mapping);
 
 void initializeGPU(int dev, bool verbose);
+unsigned long long getLastFMS();
+bool getLastFoundFirst();
+bool getLastFindFirstMode();
 
 // Declare the function to create a graph from data
 Graph* createGraph(const std::vector<int>& nodeIDs, const std::vector<int>& nodeLabels, 
