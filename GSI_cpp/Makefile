@@ -32,7 +32,7 @@ objdir = ./objs/
 objfile = $(objdir)Util.o $(objdir)IO.o $(objdir)Match.o $(objdir)Graph.o $(objdir)isomorphism.o $(objdir)pybind_wrapper.o
 
 # Default target
-all: libisomorphism.so isomorphism$(shell python3-config --extension-suffix)
+all: libisomorphism.so isomorphism$(shell python3-config --extension-suffix) GSI.exe
 
 # Link all object files to create the shared object file
 libisomorphism.so: $(objfile)
@@ -55,6 +55,9 @@ $(objdir)Match.o: match/Match.cu match/Match.h | $(objdir)
 $(objdir)isomorphism.o: main/isomorphism.cu main/isomorphism.h | $(objdir)
 	$(NVCC) $(NVCCFLAGS) main/isomorphism.cu -o $(objdir)isomorphism.o
 
+$(objdir)run.o: main/run.cu io/IO.h graph/Graph.h match/Match.h util/Util.h | $(objdir)
+	$(NVCC) $(NVCCFLAGS) main/run.cu -o $(objdir)run.o
+
 # Ensure the object directory exists
 $(objdir):
 	mkdir -p $(objdir)
@@ -65,6 +68,9 @@ $(objdir)pybind_wrapper.o: pybind_wrapper.cu main/isomorphism.h graph/Graph.h ma
 
 isomorphism$(shell python3-config --extension-suffix): $(objdir)pybind_wrapper.o $(objdir)Util.o $(objdir)IO.o $(objdir)Match.o $(objdir)Graph.o $(objdir)isomorphism.o
 	$(NVCC) -arch=$(GPU_ARCHITECTURE) -rdc=true --ptxas-options=-v -Xcompiler -fPIC $(INCLUDES) --compiler-bindir $(GCC_11_PATH)/bin -std=c++14 -O2 -I$(CUDA_PATH)/include $(EXEFLAG) -o isomorphism$(shell python3-config --extension-suffix) $(objdir)pybind_wrapper.o $(objdir)Util.o $(objdir)IO.o $(objdir)Match.o $(objdir)Graph.o $(objdir)isomorphism.o $(PYTHON_LDFLAGS) $(LDFLAGS)
+
+GSI.exe: $(objdir)run.o $(objdir)Util.o $(objdir)IO.o $(objdir)Match.o $(objdir)Graph.o
+	$(NVCC) -arch=$(GPU_ARCHITECTURE) -rdc=true --ptxas-options=-v -Xcompiler -fPIC $(INCLUDES) --compiler-bindir $(GCC_11_PATH)/bin -std=c++14 -O2 -I$(CUDA_PATH)/include -o GSI.exe $(objdir)run.o $(objdir)Util.o $(objdir)IO.o $(objdir)Match.o $(objdir)Graph.o $(LDFLAGS)
 
 
 # Phony targets 

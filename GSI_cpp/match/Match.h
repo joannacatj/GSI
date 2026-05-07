@@ -68,14 +68,21 @@ class Match
 public:
 	Match(Graph* _query, Graph* _data);
 	//void match(IO& io, unsigned*& final_result, unsigned& result_row_num, unsigned& result_col_num, int*& id_map);
-	void match(unsigned*& final_result, unsigned& result_row_num, unsigned& result_col_num, int*& id_map);
+	void match(unsigned*& final_result, unsigned& result_row_num, unsigned& result_col_num, int*& id_map, bool find_first=false);
 	~Match();
 
-	static void initGPU(int dev, bool verbose);
+	static void initGPU(int dev, bool verbose=true);
+    static unsigned long long getLastFMS();
+    static bool getLastFoundFirst();
+    static bool getLastFindFirstMode();
 
 private:
 	Graph* query;
 	Graph* data;
+
+    static unsigned long long last_fms;
+    static bool last_found_first;
+    static bool last_find_first_mode;
 
     unsigned** candidates;
 

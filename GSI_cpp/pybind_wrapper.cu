@@ -34,7 +34,7 @@ PYBIND11_MODULE(isomorphism, m) {
      * @return A vector of unordered maps representing the isomorphisms.
      */
     m.def("find_isomorphisms", &findIsomorphisms, "A function that finds isomorphisms between two graphs",
-          py::arg("query"), py::arg("data"));
+          py::arg("query"), py::arg("data"), py::arg("find_first")=false);
 
     /**
      * @brief Binds the printMapping function to Python.
@@ -65,4 +65,7 @@ PYBIND11_MODULE(isomorphism, m) {
      * @param verbose If GPU initialization status should be printed to the console.
      */
     m.def("initializeGPU", &initializeGPU, py::arg("dev"), py::arg("verbose"));
+    m.def("get_last_fms", &getLastFMS, "Return FMS from the last find-first match");
+    m.def("get_last_found_first", &getLastFoundFirst, "Return whether the last find-first match found a result");
+    m.def("get_last_find_first_mode", &getLastFindFirstMode, "Return whether the last match used find-first mode");
 }

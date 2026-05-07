@@ -68,14 +68,19 @@ class Vertex
 public:
 	//VID id;
 	LABEL label;
+	unsigned degree;
 	//NOTICE:VID and EID is just used in this single graph
 	std::vector<Neighbor> in;
 	std::vector<Neighbor> out;
 	Vertex()
 	{
 		label = -1;
+		degree = 0;
 	}
-	Vertex(LABEL lb):label(lb)
+	Vertex(LABEL lb):label(lb), degree(0)
+	{
+	}
+	Vertex(LABEL lb, unsigned deg):label(lb), degree(deg)
 	{
 	}
 };
