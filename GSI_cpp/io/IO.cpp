@@ -10,6 +10,36 @@
 
 using namespace std;
 
+namespace {
+string trim(const string& line)
+{
+    size_t first = line.find_first_not_of(" \t\r\n");
+    if (first == string::npos) {
+        return "";
+    }
+    size_t last = line.find_last_not_of(" \t\r\n");
+    return line.substr(first, last - first + 1);
+}
+
+bool readNonEmptyLine(FILE* fp, string& line, long* pos = NULL)
+{
+    char buffer[4096];
+    while (true) {
+        long current = ftell(fp);
+        if (fgets(buffer, sizeof(buffer), fp) == NULL) {
+            return false;
+        }
+        line = trim(buffer);
+        if (!line.empty()) {
+            if (pos != NULL) {
+                *pos = current;
+            }
+            return true;
+        }
+    }
+}
+}
+
 IO::IO()
 {
     this->qfp = NULL;
@@ -42,35 +72,98 @@ IO::IO(string query, string data, string file)
 Graph*
 IO::input(FILE* fp)
 {
-    char c1, c2;
-    int id0, id1, id2, lb;
+    string line;
+    long pos;
     bool flag = false;
+    bool textFormat = false;
+    int maxVertexLabel = 0;
     Graph* ng = NULL;
+    vector<bool> textVertexSeen;
 
-    while (true) {
-        fscanf(fp, "%c", &c1);
+    while (readNonEmptyLine(fp, line, &pos)) {
+        char c1 = line[0];
         if (c1 == 't') {
             if (flag) {
-                fseek(fp, -1, SEEK_CUR);
+                if (textFormat && ng != NULL) {
+                    ng->vertexLabelNum = maxVertexLabel;
+                }
+                fseek(fp, pos, SEEK_SET);
                 return ng;
             }
             flag = true;
-            fscanf(fp, " %c %d\n", &c2, &id0);
-            if (id0 == -1) {
-                return NULL;
-            } else {
+
+            istringstream iss(line);
+            char t;
+            string token;
+            iss >> t >> token;
+            if (token == "#") {
+                int id0;
+                iss >> id0;
+                if (id0 == -1) {
+                    return NULL;
+                }
                 ng = new Graph;
+
+                if (!readNonEmptyLine(fp, line)) {
+                    delete ng;
+                    return NULL;
+                }
+                int numVertex, numEdge;
+                istringstream header(line);
+                header >> numVertex >> numEdge >> ng->vertexLabelNum >> ng->edgeLabelNum;
+            } else {
+                int numVertex = atoi(token.c_str());
+                int numEdge;
+                iss >> numEdge;
+                (void)numEdge;
+                textFormat = true;
+                ng = new Graph;
+                ng->vertices.resize(numVertex);
+                textVertexSeen.assign(numVertex, false);
+                ng->edgeLabelNum = 1;
+                ng->vertexLabelNum = 0;
             }
-            //read vertex num, edge num, vertex label num, edge label num
-            int numVertex, numEdge;
-            fscanf(fp, " %d %d %d %d\n", &numVertex, &numEdge, &(ng->vertexLabelNum), &(ng->edgeLabelNum));
         } else if (c1 == 'v') {
-            fscanf(fp, " %d %d\n", &id1, &lb);
-            //NOTICE: we add 1 to labels for both vertex and edge, to ensure the label is positive!
-            //ng->addVertex(lb+1);
-            ng->addVertex(lb);
+            if (ng == NULL) {
+                cerr << "ERROR in input() -- vertex before graph header" << endl;
+                return NULL;
+            }
+            int id1, lb, degree = 0;
+            istringstream iss(line);
+            char v;
+            iss >> v >> id1 >> lb;
+            if (textFormat) {
+                iss >> degree;
+                if (id1 < 0 || id1 >= static_cast<int>(ng->vertices.size())) {
+                    cerr << "ERROR in input() -- vertex id out of range" << endl;
+                    return NULL;
+                }
+                textVertexSeen[id1] = true;
+                ng->vertices[id1] = Vertex(lb, degree);
+                maxVertexLabel = max(maxVertexLabel, lb);
+            } else {
+                //NOTICE: we add 1 to labels for both vertex and edge, to ensure the label is positive!
+                //ng->addVertex(lb+1);
+                ng->addVertex(lb);
+            }
         } else if (c1 == 'e') {
-            fscanf(fp, " %d %d %d\n", &id1, &id2, &lb);
+            if (ng == NULL) {
+                cerr << "ERROR in input() -- edge before graph header" << endl;
+                return NULL;
+            }
+            int id1, id2, lb = 1;
+            istringstream iss(line);
+            char e;
+            iss >> e >> id1 >> id2;
+            if (textFormat) {
+                if (id1 < 0 || id2 < 0 || id1 >= static_cast<int>(textVertexSeen.size()) ||
+                    id2 >= static_cast<int>(textVertexSeen.size()) || !textVertexSeen[id1] || !textVertexSeen[id2]) {
+                    cerr << "ERROR in input() -- edge uses unknown vertex" << endl;
+                    return NULL;
+                }
+            } else {
+                iss >> lb;
+            }
             //NOTICE:we treat this graph as directed, each edge represents two
             //This may cause too many matchings, if to reduce, only add the first one
             //ng->addEdge(id1, id2, lb+1);
@@ -81,7 +174,11 @@ IO::input(FILE* fp)
             return NULL;
         }
     }
-    return NULL;
+
+    if (textFormat && ng != NULL) {
+        ng->vertexLabelNum = maxVertexLabel;
+    }
+    return ng;
 }
 
 bool
