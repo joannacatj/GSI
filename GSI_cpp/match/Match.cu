@@ -58,6 +58,10 @@ __constant__ unsigned* c_candidate;
 /*__constant__ unsigned c_candidate_num;*/
 __constant__ unsigned c_result_row_num;
 __constant__ unsigned c_result_col_num;
+__constant__ unsigned c_query_vertex_num;
+__constant__ int c_find_first_mode;
+__device__ int d_find_first_found;
+__device__ unsigned d_first_mapping[MAX_QUERY_SIZE];
 /*__constant__ unsigned c_link_num;*/
 /*__constant__ unsigned c_link_pos[MAX_DEGREE];*/
 /*__constant__ unsigned c_link_edge[MAX_DEGREE];*/
@@ -839,6 +843,20 @@ subtract(unsigned*& cand, unsigned& cand_num, unsigned* record, unsigned result_
 	cand_num = cnt;
 }
 
+__device__ void
+save_first_mapping(unsigned* record, unsigned result_col_num, unsigned last_value)
+{
+    if(c_find_first_mode && result_col_num + 1 == c_query_vertex_num &&
+       atomicCAS(&d_find_first_found, 0, 1) == 0)
+    {
+        for(unsigned i = 0; i < result_col_num; ++i)
+        {
+            d_first_mapping[i] = record[i];
+        }
+        d_first_mapping[result_col_num] = last_value;
+    }
+}
+
 //WARN: in case of 2-node loops like: A->B and B->A (this can be called generalized parallel edge)
 //BETTER: implement warp-binary-search method
 __global__ void
@@ -859,6 +877,14 @@ first_kernel(unsigned* d_result_tmp_pos)
 	{
 		return; 
 	}
+    if(c_find_first_mode && d_find_first_found)
+    {
+        if(idx == 0)
+        {
+            d_result_tmp_pos[i] = 0;
+        }
+        return;
+    }
 
 	/*printf("thread id %d\n", i);*/
 	unsigned* record = c_result+i*c_result_col_num;
@@ -925,6 +951,14 @@ second_kernel(unsigned* d_result_tmp, unsigned* d_result_tmp_num)
     if (i >= c_result_row_num)
     {
         return; 
+    }
+    if(c_find_first_mode && d_find_first_found)
+    {
+        if(idx == 0)
+        {
+            d_result_tmp_num[i] = 0;
+        }
+        return;
     }
 
     unsigned bgroup = threadIdx.x & 0xffffffe0;  // equal to (x/32)*32
@@ -1143,6 +1177,14 @@ join_kernel(unsigned* d_result_tmp, unsigned* d_result_tmp_num)
     {
         return; 
     }
+    if(c_find_first_mode && d_find_first_found)
+    {
+        if(idx == 0)
+        {
+            d_result_tmp_num[i] = 0;
+        }
+        return;
+    }
 
     unsigned res_num = d_result_tmp_num[i];
     if (res_num == 0)   // early termination
@@ -1337,6 +1379,11 @@ link_kernel(unsigned* d_result_tmp, unsigned* d_result_tmp_pos, unsigned* d_resu
     unsigned gidx = threadIdx.x >> 5; //warp ID within the block
 
     unsigned tmp_begin = 0, start = 0, size = 0;
+    if(c_find_first_mode && d_find_first_found)
+    {
+        return;
+    }
+
     if(i < c_result_row_num)
     {
         tmp_begin = d_result_tmp_pos[i];
@@ -1396,8 +1443,14 @@ link_kernel(unsigned* d_result_tmp, unsigned* d_result_tmp_pos, unsigned* d_resu
         while(swpos[3]+1023 <swpos[4])
         {
             unsigned pos = (c_result_col_num+1)*(swpos[3]+threadIdx.x);
+            unsigned next_value = d_result_tmp[swpos[1]+swpos[3]+threadIdx.x];
+            save_first_mapping(ptr, c_result_col_num, next_value);
+            if(c_find_first_mode && d_find_first_found)
+            {
+                return;
+            }
             memcpy(d_result_new+swpos[2]+pos, ptr, sizeof(unsigned)*c_result_col_num);
-            d_result_new[swpos[2]+pos+c_result_col_num] = d_result_tmp[swpos[1]+swpos[3]+threadIdx.x];
+            d_result_new[swpos[2]+pos+c_result_col_num] = next_value;
             if(threadIdx.x == 0)
             {
                 swpos[3] += 1024;
@@ -1422,8 +1475,14 @@ link_kernel(unsigned* d_result_tmp, unsigned* d_result_tmp_pos, unsigned* d_resu
         if(curr+idx < size)
         {
             unsigned pos = (c_result_col_num+1)*(curr+idx);
+            unsigned next_value = d_result_tmp[tmp_begin+curr+idx];
+            save_first_mapping(record, c_result_col_num, next_value);
+            if(c_find_first_mode && d_find_first_found)
+            {
+                return;
+            }
             memcpy(d_result_new+start+pos, record, sizeof(unsigned)*c_result_col_num);
-            d_result_new[start+pos+c_result_col_num] = d_result_tmp[tmp_begin+curr+idx];
+            d_result_new[start+pos+c_result_col_num] = next_value;
         }
         curr += 32;
     }
@@ -1671,7 +1730,7 @@ bloom_kernel(unsigned* d_array, unsigned candidate_num, unsigned* d_summary)
 
 void 
 //Match::match(IO& io, unsigned*& final_result, unsigned& result_row_num, unsigned& result_col_num, int*& id_map)
-Match::match(unsigned*& final_result, unsigned& result_row_num, unsigned& result_col_num, int*& id_map)
+Match::match(unsigned*& final_result, unsigned& result_row_num, unsigned& result_col_num, int*& id_map, bool find_first)
 {
 //NOTICE: device variables can not be assigned and output directly on Host
 /*unsigned maxTaskLen = 0, minTaskLen = 1000000;*/
@@ -1681,6 +1740,11 @@ Match::match(unsigned*& final_result, unsigned& result_row_num, unsigned& result
 /*https://blog.csdn.net/rong_toa/article/details/78664902*/
 /*cudaGetSymbolAddress((void**)&dp,devData);*/
 /*cudaMemcpy(dp,&value,sizeof(float),cudaMemcpyHostToDevice);*/
+
+	int zero = 0;
+    int find_first_mode = find_first ? 1 : 0;
+	cudaMemcpyToSymbol(c_find_first_mode, &find_first_mode, sizeof(int));
+	cudaMemcpyToSymbol(d_find_first_found, &zero, sizeof(int));
 
 	//long t0 = Util::get_cur_time();
 	copyGraphToGPU();
@@ -1692,6 +1756,7 @@ Match::match(unsigned*& final_result, unsigned& result_row_num, unsigned& result
 
 	int qsize = this->query->vertex_num;
     assert(qsize <= MAX_QUERY_SIZE);
+    cudaMemcpyToSymbol(c_query_vertex_num, &qsize, sizeof(unsigned));
 	float* score = new float[qsize];
 	/*float* d_score = NULL;*/
 	/*cudaMalloc(&d_score, sizeof(float)*qsize);*/
@@ -1796,6 +1861,15 @@ Match::match(unsigned*& final_result, unsigned& result_row_num, unsigned& result
 
     // Clean up host memory
     delete[] h_intermediate_result;
+
+    if(find_first && qsize == 1 && result_row_num > 0)
+    {
+        unsigned first = 0;
+        cudaMemcpy(&first, d_result, sizeof(unsigned), cudaMemcpyDeviceToHost);
+        cudaMemcpyToSymbol(d_first_mapping, &first, sizeof(unsigned));
+        int one = 1;
+        cudaMemcpyToSymbol(d_find_first_found, &one, sizeof(int));
+    }
 
 	//NOTICE: the query graph is not so large, so we can analyse the join order in CPU(or use GPU for help)
 	//each step build a new one and release the older
@@ -1943,11 +2017,23 @@ Match::match(unsigned*& final_result, unsigned& result_row_num, unsigned& result
 
 	//long t8 = Util::get_cur_time();
 	//transfer the result to CPU and output
+    int first_found = 0;
+    cudaMemcpyFromSymbol(&first_found, d_find_first_found, sizeof(int));
 	if(success)
 	{
         //cout<<"Successful Isomorphism Found!"<<endl;
-		final_result = new unsigned[result_row_num * result_col_num];
-        cudaMemcpy(final_result, d_result, sizeof(unsigned) * result_col_num * result_row_num, cudaMemcpyDeviceToHost);
+        if(find_first && first_found)
+        {
+            result_row_num = 1;
+            result_col_num = qsize;
+            final_result = new unsigned[result_col_num];
+            cudaMemcpyFromSymbol(final_result, d_first_mapping, sizeof(unsigned) * result_col_num);
+        }
+        else
+        {
+		    final_result = new unsigned[result_row_num * result_col_num];
+            cudaMemcpy(final_result, d_result, sizeof(unsigned) * result_col_num * result_row_num, cudaMemcpyDeviceToHost);
+        }
         /*
         // Print the final result
         std::cout<<"Final Result:"<<endl;
@@ -1964,6 +2050,11 @@ Match::match(unsigned*& final_result, unsigned& result_row_num, unsigned& result
 		result_row_num = 0;
 		result_col_num = qsize;
 	}
+
+    if(find_first)
+    {
+        cout << "find-first: " << ((first_found || (success && result_row_num > 0)) ? "found" : "not found") << endl;
+    }
 #ifdef DEBUG
 	checkCudaErrors(cudaGetLastError());
 #endif

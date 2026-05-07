@@ -25,21 +25,35 @@ main(int argc, const char * argv[])
 	int i;
 
 	string output = "ans.txt";
-	if(argc > 5 || argc < 3)
+    bool find_first = false;
+    vector<string> positional;
+    for(int argi = 1; argi < argc; ++argi)
+    {
+        string arg = argv[argi];
+        if(arg == "--find-first")
+        {
+            find_first = true;
+        }
+        else
+        {
+            positional.push_back(arg);
+        }
+    }
+	if(positional.size() < 2 || positional.size() > 4)
 	{
-		cerr<<"invalid arguments!"<<endl;
+		cerr<<"usage: "<<argv[0]<<" <data> <query> [output] [device] [--find-first]"<<endl;
 		return -1;
 	}
-	string data = argv[1];
-	string query = argv[2];
-	if(argc >= 4)
+	string data = positional[0];
+	string query = positional[1];
+	if(positional.size() >= 3)
 	{
-		output = argv[3];
+		output = positional[2];
 	}
 	int dev = 0;
-	if(argc == 5)
+	if(positional.size() == 4)
 	{
-		dev = atoi(argv[4]);
+		dev = atoi(positional[3].c_str());
 	}
 
 	//set the GPU and warmup
@@ -79,10 +93,14 @@ main(int argc, const char * argv[])
 			Match m(query_list[i], data_graph);
 			io.output(i);
 		/*getchar();*/
-	//long tt1 = Util::get_cur_time();
-			m.match(io, final_result, result_row_num, result_col_num, id_map);
-	//long tt2 = Util::get_cur_time();
-	//cerr<<"match used: "<<(tt2-tt1)<<"ms"<<endl;
+            long query_start = Util::get_cur_time();
+			m.match(final_result, result_row_num, result_col_num, id_map, find_first);
+            long query_end = Util::get_cur_time();
+            cerr<<"query "<<i<<" match used: "<<(query_end-query_start)<<" ms"<<endl;
+            if(find_first)
+            {
+                cerr<<"query "<<i<<" find-first found: "<<(result_row_num > 0 ? "yes" : "no")<<endl;
+            }
 		/*getchar();*/
 			io.output(final_result, result_row_num, result_col_num, id_map);
 			io.flush();

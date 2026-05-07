@@ -30,18 +30,19 @@ def createGraph(node_ids, node_labels, edge_ids, edge_labels, column_oriented):
     return create_graph(node_ids, node_labels, edge_ids, edge_labels, column_oriented)
 
 # Find Isomorphisms
-def findIsomorphism(query, data):
+def findIsomorphism(query, data, find_first=False):
     """
     Find isomorphisms between the query graph and the data graph.
 
     Args:
         query (Graph): The query graph.
         data (Graph): The data graph.
+        find_first (bool): Stop after the first complete match is found. Default is False.
 
     Returns:
         tuple: A tuple containing a boolean indicating if isomorphisms were found and the list of mappings.
     """
-    mappings = find_isomorphisms(query, data)
+    mappings = find_isomorphisms(query, data, find_first)
 
     if len(mappings) == 0:
         return False, mappings

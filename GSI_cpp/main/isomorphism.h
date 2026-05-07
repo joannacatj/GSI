@@ -10,7 +10,7 @@
 // Forward declarations
 class Graph;
 
-std::vector<std::unordered_map<int, int>> findIsomorphisms(Graph* query, Graph* data);
+std::vector<std::unordered_map<int, int>> findIsomorphisms(Graph* query, Graph* data, bool find_first=false);
 void printMapping(const std::unordered_map<int, int>& mapping);
 
 void initializeGPU(int dev, bool verbose);

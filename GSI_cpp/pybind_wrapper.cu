@@ -34,7 +34,7 @@ PYBIND11_MODULE(isomorphism, m) {
      * @return A vector of unordered maps representing the isomorphisms.
      */
     m.def("find_isomorphisms", &findIsomorphisms, "A function that finds isomorphisms between two graphs",
-          py::arg("query"), py::arg("data"));
+          py::arg("query"), py::arg("data"), py::arg("find_first")=false);
 
     /**
      * @brief Binds the printMapping function to Python.

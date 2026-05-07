@@ -55,7 +55,7 @@ Graph* createGraph(const std::vector<int>& nodeIDs, const std::vector<int>& node
  * @param data Pointer to the data Graph object.
  * @return Vector of unordered maps, where each map represents a vertex mapping for one isomorphism.
  */
-std::vector<std::unordered_map<int, int>> findIsomorphisms(Graph* query, Graph* data) {
+std::vector<std::unordered_map<int, int>> findIsomorphisms(Graph* query, Graph* data, bool find_first) {
     unsigned* final_result = nullptr;
     int* id_map = nullptr;
     unsigned result_row_num = 0, result_col_num = 0;
@@ -63,7 +63,7 @@ std::vector<std::unordered_map<int, int>> findIsomorphisms(Graph* query, Graph* 
     Match m(query, data);
 
     // Perform the matching
-    m.match(final_result, result_row_num, result_col_num, id_map);
+    m.match(final_result, result_row_num, result_col_num, id_map, find_first);
 
     /*
     // Print final_result, result_row_num, result_col_num, and id_map
